@@ -1,7 +1,8 @@
 let cx = document.getElementById("canvas").getContext("2d");
 let mouseX = 0;
 let mouseY = 0;
-let mouseDown = "false";
+let mouseDown = null;
+let dragged = null;
 
 class bezierAnchor {
   constructor(x, y, r, color, parent) {
@@ -16,11 +17,13 @@ class bezierAnchor {
   update() {
     this.draw();
     if (mouseDown) {
-      if (this.mouseOver()) {
+      if (this.mouseOver() && dragged == null) {
         this.moving = true;
+        dragged = this;
       }
     } else {
       this.moving = false;
+      dragged = null;
     }
 
     if (this.moving) this.move();
@@ -51,15 +54,32 @@ class bezierAnchor {
   move() {
     this.x = mouseX;
     this.y = mouseY;
-    const xOffset = this.parent.x;
-    this.parent.offsetX = xOffset;
-    // console.log(this.parent.offSetX);
+    const xOffset = this.x - this.parent.x;
+    const yOffset = this.y - this.parent.y;
+
+    if (this.parent.type === 2) {
+      if (this.parent.anchor == this) {
+        this.parent.offSetX = xOffset;
+        this.parent.offSetY = yOffset;
+
+        this.parent.anchor2.x = this.parent.x - (this.x - this.parent.x);
+        this.parent.anchor2.y = this.parent.y - (this.y - this.parent.y);
+      } else {
+        this.parent.offSetX = -xOffset;
+        this.parent.offSetY = -yOffset;
+
+        this.parent.anchor.x = this.parent.x - (this.x - this.parent.x);
+        this.parent.anchor.y = this.parent.y - (this.y - this.parent.y);
+      }
+    } else {
+      this.parent.offSetX = xOffset;
+      this.parent.offSetY = yOffset;
+    }
   }
 }
 
 class controlPoint {
-  offSetX = 0;
-  constructor(x, y, r, color, anX, anY) {
+  constructor(x, y, r, color, anX, anY, type) {
     this.x = x;
     this.y = y;
     this.r = r;
@@ -67,7 +87,6 @@ class controlPoint {
     this.offSetY = anY;
     this.moving = false;
     this.color = color;
-    this.parent = parent;
     this.anchor = new bezierAnchor(
       this.x + this.offSetX,
       this.y + this.offSetY,
@@ -75,6 +94,16 @@ class controlPoint {
       "red",
       this
     );
+    if (type === 2) {
+      this.anchor2 = new bezierAnchor(
+        this.x - this.offSetX,
+        this.y - this.offSetY,
+        4,
+        "red",
+        this
+      );
+    }
+    this.type = type;
     this.update();
   }
 
@@ -82,13 +111,16 @@ class controlPoint {
     // console.log(this.offSetX);
 
     this.anchor.update();
+    if (this.type === 2) this.anchor2.update();
     this.draw();
     if (mouseDown) {
-      if (this.mouseOver()) {
+      if (this.mouseOver() && dragged == null) {
         this.moving = true;
+        dragged = this;
       }
     } else {
       this.moving = false;
+      dragged = null;
     }
 
     if (this.moving) this.move();
@@ -111,14 +143,67 @@ class controlPoint {
   move() {
     this.x = mouseX;
     this.y = mouseY;
-    // this.anchor.x = this.x + this.offSetX;
+    if (this.type === 2) {
+      this.anchor.x = this.x + this.offSetX;
+      this.anchor2.x = this.x - this.offSetX;
+      this.anchor.y = this.y + this.offSetY;
+      this.anchor2.y = this.y - this.offSetY;
+    } else if (this.type === 1) {
+      this.anchor.x = this.x + this.offSetX;
+      this.anchor.y = this.y + this.offSetY;
+    }
   }
 }
 
-// let first = new controlPoint(100, 150, 5, "red");
-// let second = new controlPoint(400, 100, 5, "red");
-let start = new controlPoint(150, 300, 6, "green", 50, 50);
-let end = new controlPoint(420, 250, 6, "green", -50, -100);
+class bezier {
+  constructor(points) {
+    this.points = [];
+    for (let i = 0; i < points.length; i++) {
+      const point = new controlPoint(
+        points[i][0],
+        points[i][1],
+        6,
+        "green",
+        points[i][2],
+        points[i][3],
+        i == 0 || i == points.length - 1 ? 1 : 2
+      );
+      this.points.push(point);
+    }
+    console.log(this.points);
+    this.update();
+  }
+
+  update() {
+    cx.beginPath();
+    for (let i = 0; i < this.points.length - 1; i++) {
+      const point = this.points[i];
+      const ax = point.type == 1 ? point.anchor.x : point.anchor2.x;
+      const ay = point.type == 1 ? point.anchor.y : point.anchor2.y;
+      cx.moveTo(this.points[i].x, this.points[i].y);
+      cx.bezierCurveTo(
+        ax,
+        ay,
+        this.points[i + 1].anchor.x,
+        this.points[i + 1].anchor.y,
+        this.points[i + 1].x,
+        this.points[i + 1].y
+      );
+    }
+    cx.stroke();
+
+    for (let i = 0; i < this.points.length; i++) {
+      this.points[i].update();
+    }
+  }
+}
+
+const bez = new bezier([
+  [100, 300, 80, 20],
+  [200, 150, -50, 20],
+  [420, 250, -100, -20],
+  [450, 50, 50, 50],
+]);
 
 function draw() {
   // define width and height
@@ -127,20 +212,7 @@ function draw() {
   cx.fillStyle = "white";
   cx.fillRect(0, 0, canvas.width, canvas.height);
 
-  cx.beginPath();
-  cx.moveTo(start.x, start.y);
-  cx.bezierCurveTo(
-    start.anchor.x,
-    start.anchor.y,
-    end.anchor.x,
-    end.anchor.y,
-    end.x,
-    end.y
-  );
-  cx.stroke();
-
-  start.update();
-  end.update();
+  bez.update();
 }
 
 setInterval(draw, 10);
